@@ -1,101 +1,66 @@
-/************************************************************************
-* 5 semestre - Eng. da Computao - Insper
-*
-* 2021 - Exemplo com HC05 com RTOS
-*
-*/
-
 #include <asf.h>
 #include "conf_board.h"
-#include <string.h>
 
-/************************************************************************/
-/* defines                                                              */
-/************************************************************************/
+#include "gfx_mono_ug_2832hsweg04.h"
+#include "gfx_mono_text.h"
+#include "sysfont.h"
 
-// LEDs
-#define LED_PIO      PIOC
-#define LED_PIO_ID   ID_PIOC
-#define LED_IDX      8
-#define LED_IDX_MASK (1 << LED_IDX)
+/* Botao da placa */
+#define BUT_PIO     PIOA
+#define BUT_PIO_ID  ID_PIOA
+#define BUT_PIO_PIN 11
+#define BUT_PIO_PIN_MASK (1 << BUT_PIO_PIN)
 
-// BotÃ£o
-#define BUT_PIO      PIOA
-#define BUT_PIO_ID   ID_PIOA
-#define BUT_IDX      11
-#define BUT_IDX_MASK (1 << BUT_IDX)
+/** RTOS  */
+#define TASK_OLED_STACK_SIZE                (1024*6/sizeof(portSTACK_TYPE))
+#define TASK_OLED_STACK_PRIORITY            (tskIDLE_PRIORITY)
+#define TASK_LCD_STACK_SIZE					(1024/sizeof(portSTACK_TYPE))
+#define TASK_LCD_STACK_PRIORITY	            (tskIDLE_PRIORITY)
 
-// usart (bluetooth ou serial)
-// Descomente para enviar dados
-// pela serial debug
+/* AFEC */
+#define AFEC_POT AFEC0
+#define AFEC_POT_ID ID_AFEC0
+#define AFEC_POT_CHANNEL 0 // Canal do pino PD30
 
-//#define DEBUG_SERIAL
+/** The conversion data is done flag */
+volatile bool g_is_conversion_done = false;
 
-#ifdef DEBUG_SERIAL
-#define USART_COM USART1
-#define USART_COM_ID ID_USART1
-#else
-#define USART_COM USART0
-#define USART_COM_ID ID_USART0
-#endif
+/** The conversion data value */
+volatile uint32_t g_ul_value = 0;
 
-/************************************************************************/
-/* RTOS                                                                 */
-/************************************************************************/
+typedef struct {
+	uint value;
+} adcData;
 
-#define TASK_BLUETOOTH_STACK_SIZE            (4096/sizeof(portSTACK_TYPE))
-#define TASK_BLUETOOTH_STACK_PRIORITY        (tskIDLE_PRIORITY)
+QueueHandle_t xQueueADC;
+adcData adc;
 
-/************************************************************************/
-/* prototypes                                                           */
-/************************************************************************/
-
-extern void vApplicationStackOverflowHook(xTaskHandle *pxTask,
-signed char *pcTaskName);
+extern void vApplicationStackOverflowHook(xTaskHandle *pxTask,  signed char *pcTaskName);
 extern void vApplicationIdleHook(void);
 extern void vApplicationTickHook(void);
 extern void vApplicationMallocFailedHook(void);
 extern void xPortSysTickHandler(void);
 
-/************************************************************************/
-/* constants                                                            */
-/************************************************************************/
+/** prototypes */
+void but_callback(void);
+static void BUT_init(void);
 
 /************************************************************************/
-/* variaveis globais                                                    */
+/* RTOS application funcs                                               */
 /************************************************************************/
 
-/************************************************************************/
-/* RTOS application HOOK                                                */
-/************************************************************************/
-
-/* Called if stack overflow during execution */
-extern void vApplicationStackOverflowHook(xTaskHandle *pxTask,
-signed char *pcTaskName) {
+extern void vApplicationStackOverflowHook(xTaskHandle *pxTask, signed char *pcTaskName) {
 	printf("stack overflow %x %s\r\n", pxTask, (portCHAR *)pcTaskName);
-	/* If the parameters have been corrupted then inspect pxCurrentTCB to
-	* identify which task has overflowed its stack.
-	*/
-	for (;;) {
-	}
+	for (;;) {	}
 }
 
-/* This function is called by FreeRTOS idle task */
 extern void vApplicationIdleHook(void) {
 	pmc_sleep(SAM_PM_SMODE_SLEEP_WFI);
 }
 
-/* This function is called by FreeRTOS each tick */
 extern void vApplicationTickHook(void) { }
 
 extern void vApplicationMallocFailedHook(void) {
-	/* Called if a call to pvPortMalloc() fails because there is insufficient
-	free memory available in the FreeRTOS heap.  pvPortMalloc() is called
-	internally by FreeRTOS API functions that create tasks, queues, software
-	timers, and semaphores.  The size of the FreeRTOS heap is set by the
-	configTOTAL_HEAP_SIZE configuration constant in FreeRTOSConfig.h. */
-
-	/* Force an assert. */
 	configASSERT( ( volatile void * ) NULL );
 }
 
@@ -103,171 +68,181 @@ extern void vApplicationMallocFailedHook(void) {
 /* handlers / callbacks                                                 */
 /************************************************************************/
 
-/************************************************************************/
-/* funcoes                                                              */
-/************************************************************************/
-
-void io_init(void) {
-
-	// Ativa PIOs
-	pmc_enable_periph_clk(LED_PIO_ID);
-	pmc_enable_periph_clk(BUT_PIO_ID);
-
-	// Configura Pinos
-	pio_configure(LED_PIO, PIO_OUTPUT_0, LED_IDX_MASK, PIO_DEFAULT | PIO_DEBOUNCE);
-	pio_configure(BUT_PIO, PIO_INPUT, BUT_IDX_MASK, PIO_PULLUP);
+void but_callback(void) {
 }
 
-static void configure_console(void) {
-	const usart_serial_options_t uart_serial_options = {
-		.baudrate = CONF_UART_BAUDRATE,
-		#if (defined CONF_UART_CHAR_LENGTH)
-		.charlength = CONF_UART_CHAR_LENGTH,
-		#endif
-		.paritytype = CONF_UART_PARITY,
-		#if (defined CONF_UART_STOP_BITS)
-		.stopbits = CONF_UART_STOP_BITS,
-		#endif
-	};
-
-	/* Configure console UART. */
-	stdio_serial_init(CONF_UART, &uart_serial_options);
-
-	/* Specify that stdout should not be buffered. */
-	#if defined(__GNUC__)
-	setbuf(stdout, NULL);
-	#else
-	/* Already the case in IAR's Normal DLIB default configuration: printf()
-	* emits one character at a time.
-	*/
-	#endif
+static void AFEC_pot_Callback(void){
+	g_ul_value = afec_channel_get_value(AFEC_POT, AFEC_POT_CHANNEL);
+	/*BaseType_t xHigherPriorityTaskWoken = pdFALSE;
+	xSemaphoreGiveFromISR(g_is_conversion_done, &xHigherPriorityTaskWoken);*/
+	
+	adcData adc;
+	adc.value = g_ul_value;
+	xQueueSendFromISR(xQueueADC, &adc, 0);
+	g_is_conversion_done = true;
 }
 
-uint32_t usart_puts(uint8_t *pstring) {
-	uint32_t i ;
+static void config_AFEC_pot(Afec *afec, uint32_t afec_id, uint32_t afec_channel, afec_callback_t callback){
+  /*************************************
+  * Ativa e configura AFEC
+  *************************************/
+  /* Ativa AFEC - 0 */
+  afec_enable(afec);
 
-	while(*(pstring + i))
-	if(uart_is_tx_empty(USART_COM))
-	usart_serial_putchar(USART_COM, *(pstring+i++));
-}
+  /* struct de configuracao do AFEC */
+  struct afec_config afec_cfg;
 
-void usart_put_string(Usart *usart, char str[]) {
-	usart_serial_write_packet(usart, str, strlen(str));
-}
+  /* Carrega parametros padrao */
+  afec_get_config_defaults(&afec_cfg);
 
-int usart_get_string(Usart *usart, char buffer[], int bufferlen, uint timeout_ms) {
-	uint timecounter = timeout_ms;
-	uint32_t rx;
-	uint32_t counter = 0;
+  /* Configura AFEC */
+  afec_init(afec, &afec_cfg);
 
-	while( (timecounter > 0) && (counter < bufferlen - 1)) {
-		if(usart_read(usart, &rx) == 0) {
-			buffer[counter++] = rx;
-		}
-		else{
-			timecounter--;
-			vTaskDelay(1);
-		}
-	}
-	buffer[counter] = 0x00;
-	return counter;
-}
+  /* Configura trigger por software */
+  afec_set_trigger(afec, AFEC_TRIG_SW);
 
-void usart_send_command(Usart *usart, char buffer_rx[], int bufferlen,
-char buffer_tx[], int timeout) {
-	usart_put_string(usart, buffer_tx);
-	usart_get_string(usart, buffer_rx, bufferlen, timeout);
-}
+  /*** Configuracao específica do canal AFEC ***/
+  struct afec_ch_config afec_ch_cfg;
+  afec_ch_get_config_defaults(&afec_ch_cfg);
+  afec_ch_cfg.gain = AFEC_GAINVALUE_0;
+  afec_ch_set_config(afec, afec_channel, &afec_ch_cfg);
 
-void config_usart0(void) {
-	sysclk_enable_peripheral_clock(ID_USART0);
-	usart_serial_options_t config;
-	config.baudrate = 9600;
-	config.charlength = US_MR_CHRL_8_BIT;
-	config.paritytype = US_MR_PAR_NO;
-	config.stopbits = false;
-	usart_serial_init(USART0, &config);
-	usart_enable_tx(USART0);
-	usart_enable_rx(USART0);
+  /*
+  * Calibracao:
+  * Because the internal ADC offset is 0x200, it should cancel it and shift
+  down to 0.
+  */
+  afec_channel_set_analog_offset(afec, afec_channel, 0x200);
 
-	// RX - PB0  TX - PB1
-	pio_configure(PIOB, PIO_PERIPH_C, (1 << 0), PIO_DEFAULT);
-	pio_configure(PIOB, PIO_PERIPH_C, (1 << 1), PIO_DEFAULT);
-}
+  /***  Configura sensor de temperatura ***/
+  struct afec_temp_sensor_config afec_temp_sensor_cfg;
 
-int hc05_init(void) {
-	char buffer_rx[128];
-	usart_send_command(USART_COM, buffer_rx, 1000, "AT", 100);
-	vTaskDelay( 500 / portTICK_PERIOD_MS);
-	usart_send_command(USART_COM, buffer_rx, 1000, "AT", 100);
-	vTaskDelay( 500 / portTICK_PERIOD_MS);
-	usart_send_command(USART_COM, buffer_rx, 1000, "AT+NAMEagoravai", 100);
-	vTaskDelay( 500 / portTICK_PERIOD_MS);
-	usart_send_command(USART_COM, buffer_rx, 1000, "AT", 100);
-	vTaskDelay( 500 / portTICK_PERIOD_MS);
-	usart_send_command(USART_COM, buffer_rx, 1000, "AT+PIN0000", 100);
+  afec_temp_sensor_get_config_defaults(&afec_temp_sensor_cfg);
+  afec_temp_sensor_set_config(afec, &afec_temp_sensor_cfg);
+  
+  /* configura IRQ */
+  afec_set_callback(afec, afec_channel,	callback, 1);
+  NVIC_SetPriority(afec_id, 4);
+  NVIC_EnableIRQ(afec_id);
 }
 
 /************************************************************************/
 /* TASKS                                                                */
 /************************************************************************/
 
-void task_bluetooth(void) {
-	printf("Task Bluetooth started \n");
-	
-	printf("Inicializando HC05 \n");
-	config_usart0();
-	hc05_init();
+void task_oled(void){
+	gfx_mono_ssd1306_init();
+	gfx_mono_draw_string("Exemplo RTOS", 0, 0, &sysfont);
 
-	// configura LEDs e BotÃµes
-	io_init();
+	for (;;) {
 
-	char button1 = '0';
-	char eof = 'X';
-
-	// Task nÃ£o deve retornar.
-	while(1) {
-		// atualiza valor do botÃ£o
-		if(pio_get(BUT_PIO, PIO_INPUT, BUT_IDX_MASK) == 0) {
-			button1 = '1';
-		} else {
-			button1 = '0';
+		// Busca um novo valor na fila do ADC!
+		// formata e imprime no LCD o dado
+		// xQueueReceive( xQueueADC, &(adc), ( TickType_t )  100 / portTICK_PERIOD_MS)
+		if (xQueueReceiveFromISR( xQueueADC, &(adc), ( TickType_t )  500 / portTICK_PERIOD_MS) == pdTRUE) {
+			/*char b[10];
+			sprintf(b, "%04d", adc.value);
+			gfx_mono_draw_string(b, 50, 20, &sysfont);*/
+			/*float width = (float)adc.value/max;
+			gfx_mono_draw_filled_rect(0, 20, 128, 10, GFX_PIXEL_CLR);
+			gfx_mono_draw_filled_rect(0, 20, 128*width, 10, GFX_PIXEL_SET);*/
+			printf("%d\n", adc.value);
 		}
-
-		// envia status botÃ£o
-		while(!usart_is_tx_ready(USART_COM)) {
-			vTaskDelay(10 / portTICK_PERIOD_MS);
-		}
-		usart_write(USART_COM, button1);
-		
-		// envia fim de pacote
-		while(!usart_is_tx_ready(USART_COM)) {
-			vTaskDelay(10 / portTICK_PERIOD_MS);
-		}
-		usart_write(USART_COM, eof);
-
-		// dorme por 500 ms
-		vTaskDelay(500 / portTICK_PERIOD_MS);
 	}
+}
+
+void task_adc(void){
+
+	/* inicializa e configura adc */
+	config_AFEC_pot(AFEC_POT, AFEC_POT_ID, AFEC_POT_CHANNEL, AFEC_pot_Callback);
+
+	/* Selecina canal e inicializa conversão */
+	afec_channel_enable(AFEC_POT, AFEC_POT_CHANNEL);
+	afec_start_software_conversion(AFEC_POT);
+	
+        
+	/*if (g_is_conversion_done == NULL)
+		printf("Falha em criar o semaforo\n");*/
+	
+	/*xQueueADC = xQueueCreate( 5, sizeof( adcData ));*/
+
+	while(1){
+		// xSemaphoreTake(g_is_conversion_done, ( TickType_t ) 500 / portTICK_PERIOD_MS) == pdTRUE
+		if(g_is_conversion_done){
+			g_is_conversion_done = 0;
+
+			adc.value = g_ul_value;
+			xQueueSend(xQueueADC, &adc, 0);
+
+			vTaskDelay(( TickType_t ) (1/31025) / portTICK_PERIOD_MS);
+			/*vTaskDelay(( TickType_t ) 1 / portTICK_PERIOD_MS);*/
+
+			/* Selecina canal e inicializa conversão */
+			afec_channel_enable(AFEC_POT, AFEC_POT_CHANNEL);
+			afec_start_software_conversion(AFEC_POT);
+		}
+	}
+}
+
+/************************************************************************/
+/* funcoes                                                              */
+/************************************************************************/
+
+static void configure_console(void) {
+	const usart_serial_options_t uart_serial_options = {
+		.baudrate = CONF_UART_BAUDRATE,
+		.charlength = CONF_UART_CHAR_LENGTH,
+		.paritytype = CONF_UART_PARITY,
+		.stopbits = CONF_UART_STOP_BITS,
+	};
+
+	/* Configure console UART. */
+	stdio_serial_init(CONF_UART, &uart_serial_options);
+
+	/* Specify that stdout should not be buffered. */
+	setbuf(stdout, NULL);
+}
+
+static void BUT_init(void) {
+	/* configura prioridae */
+	NVIC_EnableIRQ(BUT_PIO_ID);
+	NVIC_SetPriority(BUT_PIO_ID, 4);
+
+	/* conf botão como entrada */
+	pio_configure(BUT_PIO, PIO_INPUT, BUT_PIO_PIN_MASK, PIO_DEFAULT);
+	pio_set_debounce_filter(BUT_PIO, BUT_PIO_PIN_MASK, 60);
+	pio_enable_interrupt(BUT_PIO, BUT_PIO_PIN_MASK);
+	pio_handler_set(BUT_PIO, BUT_PIO_ID, BUT_PIO_PIN_MASK, PIO_IT_FALL_EDGE , but_callback);
 }
 
 /************************************************************************/
 /* main                                                                 */
 /************************************************************************/
 
+
 int main(void) {
+	
 	/* Initialize the SAM system */
 	sysclk_init();
 	board_init();
-
 	configure_console();
+	
+	xQueueADC = xQueueCreate( 5, sizeof( adcData ));
+	/*g_is_conversion_done = xSemaphoreCreateBinary();*/
 
-	/* Create task to make led blink */
-	xTaskCreate(task_bluetooth, "BLT", TASK_BLUETOOTH_STACK_SIZE, NULL,	TASK_BLUETOOTH_STACK_PRIORITY, NULL);
+	if (xTaskCreate(task_oled, "oled", TASK_OLED_STACK_SIZE, NULL, TASK_OLED_STACK_PRIORITY, NULL) != pdPASS) {
+		printf("Failed to create oled task\r\n");
+	}
+	
+	/* Create task to handler LCD */
+	if (xTaskCreate(task_adc, "adc", TASK_LCD_STACK_SIZE, NULL, TASK_LCD_STACK_PRIORITY, NULL) != pdPASS) {
+		printf("Failed to create test adc task\r\n");
+	}
 
 	/* Start the scheduler. */
 	vTaskStartScheduler();
-
+    
+  /* RTOS não deve chegar aqui !! */
 	while(1){}
 
 	/* Will only get here if there was insufficient memory to create the idle task. */
