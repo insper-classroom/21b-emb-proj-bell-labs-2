@@ -37,14 +37,16 @@
           <option id="common.services.basic.gpio" value="Add" config="" content-id="Atmel.ASF" />
           <option id="common.services.ioport" value="Add" config="" content-id="Atmel.ASF" />
           <option id="common.utils.stdio.stdio_serial" value="Add" config="" content-id="Atmel.ASF" />
+          <option id="sam.components.memory.sdram.is42s16100e" value="Add" config="" content-id="Atmel.ASF" />
           <option id="sam.drivers.afec" value="Add" config="" content-id="Atmel.ASF" />
           <option id="sam.drivers.mpu" value="Add" config="" content-id="Atmel.ASF" />
           <option id="sam.drivers.pio" value="Add" config="" content-id="Atmel.ASF" />
+          <option id="sam.drivers.rtc" value="Add" config="" content-id="Atmel.ASF" />
           <option id="sam.drivers.spi" value="Add" config="" content-id="Atmel.ASF" />
           <option id="sam.drivers.tc" value="Add" config="" content-id="Atmel.ASF" />
           <option id="sam.drivers.tc.appnote" value="Add" config="" content-id="Atmel.ASF" />
           <option id="thirdparty.os.freertos.version" value="Add" config="8.2.3" content-id="Atmel.ASF" />
-          <option id="sam.drivers.rtc" value="Add" config="" content-id="Atmel.ASF" />
+          <option id="sam.drivers.sdramc" value="Add" config="" content-id="Atmel.ASF" />
           <option id="common.services.freertos.sam_example" value="Add" config="" content-id="Atmel.ASF" />
           <option id="sam.utils.cmsis.same70.source.template" value="Add" config="" content-id="Atmel.ASF" />
         </options>
@@ -286,6 +288,9 @@
           <file path="src/ASF/sam/drivers/tc/tc_capture_waveform_example/tc_capture_waveform_example.h" framework="" version="3.42.0" source="sam\drivers\tc\tc_capture_waveform_example\tc_capture_waveform_example.h" changed="False" content-id="Atmel.ASF" />
           <file path="src/ASF/sam/drivers/rtc/rtc.c" framework="" version="3.42.0" source="sam\drivers\rtc\rtc.c" changed="False" content-id="Atmel.ASF" />
           <file path="src/ASF/sam/drivers/rtc/rtc.h" framework="" version="3.42.0" source="sam\drivers\rtc\rtc.h" changed="False" content-id="Atmel.ASF" />
+          <file path="src/ASF/sam/components/memory/sdram/is42s16100e/is42s16100e.h" framework="" version="3.42.0" source="sam\components\memory\sdram\is42s16100e\is42s16100e.h" changed="False" content-id="Atmel.ASF" />
+          <file path="src/ASF/sam/drivers/sdramc/sdramc.c" framework="" version="3.42.0" source="sam\drivers\sdramc\sdramc.c" changed="False" content-id="Atmel.ASF" />
+          <file path="src/ASF/sam/drivers/sdramc/sdramc.h" framework="" version="3.42.0" source="sam\drivers\sdramc\sdramc.h" changed="False" content-id="Atmel.ASF" />
         </files>
         <documentation help="http://asf.atmel.com/docs/3.35.1/common.services.freertos.sam_example.same70_xplained/html/index.html" />
         <offline-documentation help="" />
@@ -367,6 +372,8 @@
       <Value>../src/ASF/common/services/sleepmgr</Value>
       <Value>../src/ASF/sam/drivers/tc</Value>
       <Value>../src/ASF/sam/drivers/rtc</Value>
+      <Value>../src/ASF/sam/components/memory/sdram/is42s16100e</Value>
+      <Value>../src/ASF/sam/drivers/sdramc</Value>
     </ListValues>
   </armgcc.compiler.directories.IncludePaths>
   <armgcc.compiler.optimization.level>Optimize most (-O3)</armgcc.compiler.optimization.level>
@@ -422,6 +429,8 @@
       <Value>../src/ASF/common/services/sleepmgr</Value>
       <Value>../src/ASF/sam/drivers/tc</Value>
       <Value>../src/ASF/sam/drivers/rtc</Value>
+      <Value>../src/ASF/sam/components/memory/sdram/is42s16100e</Value>
+      <Value>../src/ASF/sam/drivers/sdramc</Value>
     </ListValues>
   </armgcc.assembler.general.IncludePaths>
   <armgcc.preprocessingassembler.general.AssemblerFlags>-DARM_MATH_CM7=true -DBOARD=SAME70_XPLAINED -D__FREERTOS__ -D__SAME70Q21__ -Dprintf=iprintf -Dscanf=iscanf</armgcc.preprocessingassembler.general.AssemblerFlags>
@@ -460,6 +469,8 @@
       <Value>../src/ASF/common/services/sleepmgr</Value>
       <Value>../src/ASF/sam/drivers/tc</Value>
       <Value>../src/ASF/sam/drivers/rtc</Value>
+      <Value>../src/ASF/sam/components/memory/sdram/is42s16100e</Value>
+      <Value>../src/ASF/sam/drivers/sdramc</Value>
     </ListValues>
   </armgcc.preprocessingassembler.general.IncludePaths>
 </ArmGcc>
@@ -520,6 +531,8 @@
       <Value>../src/ASF/common/services/sleepmgr</Value>
       <Value>../src/ASF/sam/drivers/tc</Value>
       <Value>../src/ASF/sam/drivers/rtc</Value>
+      <Value>../src/ASF/sam/components/memory/sdram/is42s16100e</Value>
+      <Value>../src/ASF/sam/drivers/sdramc</Value>
     </ListValues>
   </armgcc.compiler.directories.IncludePaths>
   <armgcc.compiler.optimization.level>Optimize (-O1)</armgcc.compiler.optimization.level>
@@ -578,6 +591,8 @@
       <Value>../src/ASF/common/services/sleepmgr</Value>
       <Value>../src/ASF/sam/drivers/tc</Value>
       <Value>../src/ASF/sam/drivers/rtc</Value>
+      <Value>../src/ASF/sam/components/memory/sdram/is42s16100e</Value>
+      <Value>../src/ASF/sam/drivers/sdramc</Value>
     </ListValues>
   </armgcc.assembler.general.IncludePaths>
   <armgcc.assembler.debugging.DebugLevel>Default (-g)</armgcc.assembler.debugging.DebugLevel>
@@ -617,6 +632,8 @@
       <Value>../src/ASF/common/services/sleepmgr</Value>
       <Value>../src/ASF/sam/drivers/tc</Value>
       <Value>../src/ASF/sam/drivers/rtc</Value>
+      <Value>../src/ASF/sam/components/memory/sdram/is42s16100e</Value>
+      <Value>../src/ASF/sam/drivers/sdramc</Value>
     </ListValues>
   </armgcc.preprocessingassembler.general.IncludePaths>
   <armgcc.preprocessingassembler.debugging.DebugLevel>Default (-Wa,-g)</armgcc.preprocessingassembler.debugging.DebugLevel>
@@ -648,12 +665,17 @@
     <Folder Include="src\ASF\sam\" />
     <Folder Include="src\ASF\sam\boards\" />
     <Folder Include="src\ASF\sam\boards\same70_xplained\" />
+    <Folder Include="src\ASF\sam\components\" />
+    <Folder Include="src\ASF\sam\components\memory\" />
+    <Folder Include="src\ASF\sam\components\memory\sdram\" />
+    <Folder Include="src\ASF\sam\components\memory\sdram\is42s16100e\" />
     <Folder Include="src\ASF\sam\drivers\" />
     <Folder Include="src\ASF\sam\drivers\afec\" />
     <Folder Include="src\ASF\sam\drivers\mpu\" />
     <Folder Include="src\ASF\sam\drivers\pio\" />
     <Folder Include="src\ASF\sam\drivers\pmc\" />
     <Folder Include="src\ASF\sam\drivers\rtc\" />
+    <Folder Include="src\ASF\sam\drivers\sdramc\" />
     <Folder Include="src\ASF\sam\drivers\spi\" />
     <Folder Include="src\ASF\sam\drivers\tc\" />
     <Folder Include="src\ASF\sam\drivers\tc\tc_capture_waveform_example\" />
@@ -694,7 +716,6 @@
     <Folder Include="src\ASF\thirdparty\freertos\freertos-8.2.3\Source\portable\GCC\ARM_CM7\r0p1\" />
     <Folder Include="src\ASF\thirdparty\freertos\freertos-8.2.3\Source\portable\MemMang\" />
     <Folder Include="src\config\" />
-    <Folder Include="src\oled\" />
   </ItemGroup>
   <ItemGroup>
     <Compile Include="src\ASF\common\services\sleepmgr\sam\sleepmgr.c">
@@ -704,6 +725,9 @@
       <SubType>compile</SubType>
     </None>
     <None Include="src\ASF\common\services\sleepmgr\sam\sleepmgr.h">
+      <SubType>compile</SubType>
+    </None>
+    <None Include="src\ASF\sam\components\memory\sdram\is42s16100e\is42s16100e.h">
       <SubType>compile</SubType>
     </None>
     <Compile Include="src\ASF\sam\drivers\afec\afec.c">
@@ -716,6 +740,12 @@
       <SubType>compile</SubType>
     </Compile>
     <None Include="src\ASF\sam\drivers\rtc\rtc.h">
+      <SubType>compile</SubType>
+    </None>
+    <Compile Include="src\ASF\sam\drivers\sdramc\sdramc.c">
+      <SubType>compile</SubType>
+    </Compile>
+    <None Include="src\ASF\sam\drivers\sdramc\sdramc.h">
       <SubType>compile</SubType>
     </None>
     <Compile Include="src\ASF\sam\drivers\spi\spi.c">
@@ -736,45 +766,6 @@
     <None Include="src\ASF\sam\drivers\tc\tc_capture_waveform_example\tc_capture_waveform_example.h">
       <SubType>compile</SubType>
     </None>
-    <Compile Include="src\oled\gfx_mono.h">
-      <SubType>compile</SubType>
-    </Compile>
-    <Compile Include="src\oled\gfx_mono_framebuffer.c">
-      <SubType>compile</SubType>
-    </Compile>
-    <Compile Include="src\oled\gfx_mono_framebuffer.h">
-      <SubType>compile</SubType>
-    </Compile>
-    <Compile Include="src\oled\gfx_mono_generic.c">
-      <SubType>compile</SubType>
-    </Compile>
-    <Compile Include="src\oled\gfx_mono_generic.h">
-      <SubType>compile</SubType>
-    </Compile>
-    <Compile Include="src\oled\gfx_mono_text.c">
-      <SubType>compile</SubType>
-    </Compile>
-    <Compile Include="src\oled\gfx_mono_text.h">
-      <SubType>compile</SubType>
-    </Compile>
-    <Compile Include="src\oled\gfx_mono_ug_2832hsweg04.c">
-      <SubType>compile</SubType>
-    </Compile>
-    <Compile Include="src\oled\gfx_mono_ug_2832hsweg04.h">
-      <SubType>compile</SubType>
-    </Compile>
-    <Compile Include="src\oled\ssd1306.c">
-      <SubType>compile</SubType>
-    </Compile>
-    <Compile Include="src\oled\ssd1306.h">
-      <SubType>compile</SubType>
-    </Compile>
-    <Compile Include="src\oled\sysfont.c">
-      <SubType>compile</SubType>
-    </Compile>
-    <Compile Include="src\oled\sysfont.h">
-      <SubType>compile</SubType>
-    </Compile>
     <None Include="src\asf.h">
       <SubType>compile</SubType>
     </None>

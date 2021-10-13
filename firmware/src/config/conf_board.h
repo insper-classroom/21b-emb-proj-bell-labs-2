@@ -55,4 +55,7 @@
 #define SSD1306_RES_PIN              PIO_PC17_IDX
 #define GFX_MONO_UG_2832HSWEG04
 #define CONFIG_SSD1306_FRAMEBUFFER
+
+#define CONF_BOARD_SDRAMC
+
 #endif /* CONF_BOARD_H */

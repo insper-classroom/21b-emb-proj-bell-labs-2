@@ -1,9 +1,6 @@
 #include <asf.h>
 #include "conf_board.h"
-
-#include "gfx_mono_ug_2832hsweg04.h"
-#include "gfx_mono_text.h"
-#include "sysfont.h"
+#include <stdlib.h>
 
 /* Botao da placa */
 #define BUT_PIO     PIOA
@@ -34,6 +31,9 @@ typedef struct {
 
 QueueHandle_t xQueueADC;
 adcData adc;
+
+SemaphoreHandle_t xSemaphore;
+
 
 extern void vApplicationStackOverflowHook(xTaskHandle *pxTask,  signed char *pcTaskName);
 extern void vApplicationIdleHook(void);
@@ -71,85 +71,132 @@ extern void vApplicationMallocFailedHook(void) {
 void but_callback(void) {
 }
 
+volatile uint16_t g_sdram_cnt = 0 ;
+volatile uint16_t g_done = 0 ;
+uint16_t *g_sdram = (uint16_t *)BOARD_SDRAM_ADDR;
+
+#define SOUND_LEN 500
+
+#define PIOO		  PIOD
+#define PIOO_ID		  ID_PIOD
+#define PIO_IDX       11
+#define PIO_IDX_MASK  (1u << PIO_IDX)
+
+void pin_toggle(Pio *pio, uint32_t mask){
+	if(pio_get_output_data_status(pio, mask))
+	pio_clear(pio, mask);
+	else
+	pio_set(pio,mask);
+}
+
+void TC0_Handler(void){
+	volatile uint32_t ul_dummy;
+
+	/****************************************************************
+	* Devemos indicar ao TC que a interrupção foi satisfeita.
+	******************************************************************/
+	ul_dummy = tc_get_status(TC0, 0);
+	printf("[Debug] TC0 IRQ \n");
+
+	/* Avoid compiler warning */
+	UNUSED(ul_dummy);
+
+}
+
 static void AFEC_pot_Callback(void){
-	g_ul_value = afec_channel_get_value(AFEC_POT, AFEC_POT_CHANNEL);
-	/*BaseType_t xHigherPriorityTaskWoken = pdFALSE;
-	xSemaphoreGiveFromISR(g_is_conversion_done, &xHigherPriorityTaskWoken);*/
+	if(g_sdram_cnt < SOUND_LEN){
+		pin_toggle(PIOO, PIO_IDX_MASK);
+		*(g_sdram + g_sdram_cnt) = afec_channel_get_value(AFEC_POT, AFEC_POT_CHANNEL);
+		g_sdram_cnt++;
+	} else {
+		afec_disable_interrupt(AFEC0,AFEC_POT_CHANNEL );
+		xSemaphoreGiveFromISR(xSemaphore, 0);
+	}
+	g_is_conversion_done = 1;
+	
+	
+	/*
 	
 	adcData adc;
 	adc.value = g_ul_value;
 	xQueueSendFromISR(xQueueADC, &adc, 0);
-	g_is_conversion_done = true;
+	g_is_conversion_done = true;*/
+}
+
+void TC_init(Tc * TC, int ID_TC, int TC_CHANNEL, int freq){
+	uint32_t ul_div;
+	uint32_t ul_tcclks;
+	uint32_t ul_sysclk = sysclk_get_cpu_hz();
+
+	pmc_enable_periph_clk(ID_TC);
+
+	/** Configura o TC para operar em  4Mhz e interrup?c?o no RC compare */
+	tc_find_mck_divisor(freq, ul_sysclk, &ul_div, &ul_tcclks, ul_sysclk);
+	
+	//PMC->PMC_SCER = 1 << 14;
+	ul_tcclks = 1;
+	
+	tc_init(TC, TC_CHANNEL, ul_tcclks
+	| TC_CMR_WAVE /* Waveform mode is enabled */
+	| TC_CMR_ACPA_SET /* RA Compare Effect: set */
+	| TC_CMR_ACPC_CLEAR /* RC Compare Effect: clear */
+	| TC_CMR_CPCTRG /* UP mode with automatic trigger on RC Compare */
+	);
+	
+	tc_write_rc(TC, TC_CHANNEL, (ul_sysclk / ul_div) / freq /8 );
+	tc_write_ra(TC, TC_CHANNEL, (ul_sysclk / ul_div) / freq / 8 / 2);
+
+	tc_start(TC, TC_CHANNEL);
 }
 
 static void config_AFEC_pot(Afec *afec, uint32_t afec_id, uint32_t afec_channel, afec_callback_t callback){
-  /*************************************
-  * Ativa e configura AFEC
-  *************************************/
-  /* Ativa AFEC - 0 */
-  afec_enable(afec);
+	/*************************************
+	* Ativa e configura AFEC
+	*************************************/
+	/* Ativa AFEC - 0 */
+	afec_enable(afec);
 
-  /* struct de configuracao do AFEC */
-  struct afec_config afec_cfg;
+	/* struct de configuracao do AFEC */
+	struct afec_config afec_cfg;
 
-  /* Carrega parametros padrao */
-  afec_get_config_defaults(&afec_cfg);
+	/* Carrega parametros padrao */
+	afec_get_config_defaults(&afec_cfg);
 
-  /* Configura AFEC */
-  afec_init(afec, &afec_cfg);
+	/* Configura AFEC */
+	afec_init(afec, &afec_cfg);
 
-  /* Configura trigger por software */
-  afec_set_trigger(afec, AFEC_TRIG_SW);
+	/* Configura trigger por software */
+	afec_set_trigger(AFEC0, AFEC_TRIG_TIO_CH_0);
+	AFEC0->AFEC_MR |= 3;
 
-  /*** Configuracao específica do canal AFEC ***/
-  struct afec_ch_config afec_ch_cfg;
-  afec_ch_get_config_defaults(&afec_ch_cfg);
-  afec_ch_cfg.gain = AFEC_GAINVALUE_0;
-  afec_ch_set_config(afec, afec_channel, &afec_ch_cfg);
+	/*** Configuracao específica do canal AFEC ***/
+	struct afec_ch_config afec_ch_cfg;
+	afec_ch_get_config_defaults(&afec_ch_cfg);
+	afec_ch_cfg.gain = AFEC_GAINVALUE_0;
+	afec_ch_set_config(afec, afec_channel, &afec_ch_cfg);
 
-  /*
-  * Calibracao:
-  * Because the internal ADC offset is 0x200, it should cancel it and shift
-  down to 0.
-  */
-  afec_channel_set_analog_offset(afec, afec_channel, 0x200);
+	/*
+	* Calibracao:
+	* Because the internal ADC offset is 0x200, it should cancel it and shift
+	down to 0.
+	*/
+	afec_channel_set_analog_offset(afec, afec_channel, 0x200);
 
-  /***  Configura sensor de temperatura ***/
-  struct afec_temp_sensor_config afec_temp_sensor_cfg;
+	/***  Configura sensor de temperatura ***/
+	struct afec_temp_sensor_config afec_temp_sensor_cfg;
 
-  afec_temp_sensor_get_config_defaults(&afec_temp_sensor_cfg);
-  afec_temp_sensor_set_config(afec, &afec_temp_sensor_cfg);
-  
-  /* configura IRQ */
-  afec_set_callback(afec, afec_channel,	callback, 1);
-  NVIC_SetPriority(afec_id, 4);
-  NVIC_EnableIRQ(afec_id);
+	afec_temp_sensor_get_config_defaults(&afec_temp_sensor_cfg);
+	afec_temp_sensor_set_config(afec, &afec_temp_sensor_cfg);
+	
+	/* configura IRQ */
+	afec_set_callback(afec, afec_channel,	callback, 1);
+	NVIC_SetPriority(afec_id, 4);
+	NVIC_EnableIRQ(afec_id);
 }
 
 /************************************************************************/
 /* TASKS                                                                */
 /************************************************************************/
-
-void task_oled(void){
-	gfx_mono_ssd1306_init();
-	gfx_mono_draw_string("Exemplo RTOS", 0, 0, &sysfont);
-
-	for (;;) {
-
-		// Busca um novo valor na fila do ADC!
-		// formata e imprime no LCD o dado
-		// xQueueReceive( xQueueADC, &(adc), ( TickType_t )  100 / portTICK_PERIOD_MS)
-		if (xQueueReceiveFromISR( xQueueADC, &(adc), ( TickType_t )  500 / portTICK_PERIOD_MS) == pdTRUE) {
-			/*char b[10];
-			sprintf(b, "%04d", adc.value);
-			gfx_mono_draw_string(b, 50, 20, &sysfont);*/
-			/*float width = (float)adc.value/max;
-			gfx_mono_draw_filled_rect(0, 20, 128, 10, GFX_PIXEL_CLR);
-			gfx_mono_draw_filled_rect(0, 20, 128*width, 10, GFX_PIXEL_SET);*/
-			printf("%d\n", adc.value);
-		}
-	}
-}
 
 void task_adc(void){
 
@@ -158,29 +205,29 @@ void task_adc(void){
 
 	/* Selecina canal e inicializa conversão */
 	afec_channel_enable(AFEC_POT, AFEC_POT_CHANNEL);
-	afec_start_software_conversion(AFEC_POT);
+	//afec_start_software_conversion(AFEC_POT);
 	
-        
+	
 	/*if (g_is_conversion_done == NULL)
-		printf("Falha em criar o semaforo\n");*/
+	printf("Falha em criar o semaforo\n");*/
 	
 	/*xQueueADC = xQueueCreate( 5, sizeof( adcData ));*/
+	TC_init(TC0, ID_TC0, 0, 44000);
+
 
 	while(1){
-		// xSemaphoreTake(g_is_conversion_done, ( TickType_t ) 500 / portTICK_PERIOD_MS) == pdTRUE
-		if(g_is_conversion_done){
-			g_is_conversion_done = 0;
-
-			adc.value = g_ul_value;
-			xQueueSend(xQueueADC, &adc, 0);
-
-			vTaskDelay(( TickType_t ) (1/31025) / portTICK_PERIOD_MS);
-			/*vTaskDelay(( TickType_t ) 1 / portTICK_PERIOD_MS);*/
-
-			/* Selecina canal e inicializa conversão */
-			afec_channel_enable(AFEC_POT, AFEC_POT_CHANNEL);
-			afec_start_software_conversion(AFEC_POT);
+		// aguarda por até 500 ms pelo se for liberado entra no if
+		if( xSemaphoreTake(xSemaphore, 500 / portTICK_PERIOD_MS) == pdTRUE ){
+			for(uint16_t i =0; i< SOUND_LEN; i++)
+				printf("%d ",  *(g_sdram + i) );
+			printf(" \n ---------");
+			vTaskDelay(500);
+			g_sdram_cnt = 0;
+			config_AFEC_pot(AFEC_POT, AFEC_POT_ID, AFEC_POT_CHANNEL, AFEC_pot_Callback);
+			
 		}
+		// xSemaphoreTake(g_is_conversion_done, ( TickType_t ) 500 / portTICK_PERIOD_MS) == pdTRUE
+	
 	}
 }
 
@@ -227,13 +274,34 @@ int main(void) {
 	board_init();
 	configure_console();
 	
+	/* Complete SDRAM configuration */
+	sdramc_init((sdramc_memory_dev_t *)&SDRAM_ISSI_IS42S16100E,	sysclk_get_cpu_hz());
+	sdram_enable_unaligned_support();
+	SCB_CleanInvalidateDCache();
+
+  xSemaphore = xSemaphoreCreateBinary();
+
+	
+	pmc_enable_periph_clk(PIOO_ID);
+	pio_configure(PIOO, PIO_OUTPUT_0, PIO_IDX_MASK, PIO_DEFAULT);
+
+/*
+
+	for (uint16_t i= 0; i < 100; i++)
+	*(pus +i) = i;
+	
+	
+	for (uint16_t i =0; i < 100; i++)
+	printf("%d ", *(pus +i));
+	
+	while(1){}*/
+	g_sdram = malloc(SOUND_LEN*2);
+
+	
 	xQueueADC = xQueueCreate( 5, sizeof( adcData ));
 	/*g_is_conversion_done = xSemaphoreCreateBinary();*/
 
-	if (xTaskCreate(task_oled, "oled", TASK_OLED_STACK_SIZE, NULL, TASK_OLED_STACK_PRIORITY, NULL) != pdPASS) {
-		printf("Failed to create oled task\r\n");
-	}
-	
+
 	/* Create task to handler LCD */
 	if (xTaskCreate(task_adc, "adc", TASK_LCD_STACK_SIZE, NULL, TASK_LCD_STACK_PRIORITY, NULL) != pdPASS) {
 		printf("Failed to create test adc task\r\n");
@@ -241,8 +309,8 @@ int main(void) {
 
 	/* Start the scheduler. */
 	vTaskStartScheduler();
-    
-  /* RTOS não deve chegar aqui !! */
+	
+	/* RTOS não deve chegar aqui !! */
 	while(1){}
 
 	/* Will only get here if there was insufficient memory to create the idle task. */

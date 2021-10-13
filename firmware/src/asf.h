@@ -108,8 +108,14 @@
 // From module: SAM FPU driver
 #include <fpu.h>
 
+// From module: SAM SDRAMC Driver
+#include <sdramc.h>
+
 // From module: SAME70 XPLD LED support enabled
 #include <led.h>
+
+// From module: SDRAMC configuration for IS42S16100E
+#include <is42s16100e.h>
 
 // From module: SPI - Serial Peripheral Interface
 #include <spi.h>
