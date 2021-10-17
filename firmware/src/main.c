@@ -2,15 +2,7 @@
 #include "conf_board.h"
 #include <stdlib.h>
 
-/* Botao da placa */
-#define BUT_PIO     PIOA
-#define BUT_PIO_ID  ID_PIOA
-#define BUT_PIO_PIN 11
-#define BUT_PIO_PIN_MASK (1 << BUT_PIO_PIN)
-
 /** RTOS  */
-#define TASK_OLED_STACK_SIZE                (1024*6/sizeof(portSTACK_TYPE))
-#define TASK_OLED_STACK_PRIORITY            (tskIDLE_PRIORITY)
 #define TASK_LCD_STACK_SIZE					(1024/sizeof(portSTACK_TYPE))
 #define TASK_LCD_STACK_PRIORITY	            (tskIDLE_PRIORITY)
 
@@ -19,31 +11,13 @@
 #define AFEC_POT_ID ID_AFEC0
 #define AFEC_POT_CHANNEL 0 // Canal do pino PD30
 
-/** The conversion data is done flag */
-volatile bool g_is_conversion_done = false;
-
-/** The conversion data value */
-volatile uint32_t g_ul_value = 0;
-
-typedef struct {
-	uint value;
-} adcData;
-
-QueueHandle_t xQueueADC;
-adcData adc;
-
 SemaphoreHandle_t xSemaphore;
-
 
 extern void vApplicationStackOverflowHook(xTaskHandle *pxTask,  signed char *pcTaskName);
 extern void vApplicationIdleHook(void);
 extern void vApplicationTickHook(void);
 extern void vApplicationMallocFailedHook(void);
 extern void xPortSysTickHandler(void);
-
-/** prototypes */
-void but_callback(void);
-static void BUT_init(void);
 
 /************************************************************************/
 /* RTOS application funcs                                               */
@@ -68,25 +42,21 @@ extern void vApplicationMallocFailedHook(void) {
 /* handlers / callbacks                                                 */
 /************************************************************************/
 
-void but_callback(void) {
-}
-
 volatile uint16_t g_sdram_cnt = 0 ;
-volatile uint16_t g_done = 0 ;
 uint16_t *g_sdram = (uint16_t *)BOARD_SDRAM_ADDR;
 
 #define SOUND_LEN 500
 
-#define PIOO		  PIOD
-#define PIOO_ID		  ID_PIOD
-#define PIO_IDX       11
-#define PIO_IDX_MASK  (1u << PIO_IDX)
+#define LED			  PIOD
+#define LED_ID		  ID_PIOD
+#define LED_IDX       11
+#define LED_IDX_MASK  (1u << LED_IDX)
 
 void pin_toggle(Pio *pio, uint32_t mask){
 	if(pio_get_output_data_status(pio, mask))
-	pio_clear(pio, mask);
+		pio_clear(pio, mask);
 	else
-	pio_set(pio,mask);
+		pio_set(pio,mask);
 }
 
 void TC0_Handler(void){
@@ -105,22 +75,13 @@ void TC0_Handler(void){
 
 static void AFEC_pot_Callback(void){
 	if(g_sdram_cnt < SOUND_LEN){
-		pin_toggle(PIOO, PIO_IDX_MASK);
+		pin_toggle(LED, LED_IDX_MASK);
 		*(g_sdram + g_sdram_cnt) = afec_channel_get_value(AFEC_POT, AFEC_POT_CHANNEL);
 		g_sdram_cnt++;
 	} else {
 		afec_disable_interrupt(AFEC0,AFEC_POT_CHANNEL );
 		xSemaphoreGiveFromISR(xSemaphore, 0);
 	}
-	g_is_conversion_done = 1;
-	
-	
-	/*
-	
-	adcData adc;
-	adc.value = g_ul_value;
-	xQueueSendFromISR(xQueueADC, &adc, 0);
-	g_is_conversion_done = true;*/
 }
 
 void TC_init(Tc * TC, int ID_TC, int TC_CHANNEL, int freq){
@@ -136,11 +97,11 @@ void TC_init(Tc * TC, int ID_TC, int TC_CHANNEL, int freq){
 	//PMC->PMC_SCER = 1 << 14;
 	ul_tcclks = 1;
 	
-	tc_init(TC, TC_CHANNEL, ul_tcclks
-	| TC_CMR_WAVE /* Waveform mode is enabled */
-	| TC_CMR_ACPA_SET /* RA Compare Effect: set */
-	| TC_CMR_ACPC_CLEAR /* RC Compare Effect: clear */
-	| TC_CMR_CPCTRG /* UP mode with automatic trigger on RC Compare */
+	tc_init(TC, TC_CHANNEL, ul_tcclks 
+							| TC_CMR_WAVE /* Waveform mode is enabled */
+							| TC_CMR_ACPA_SET /* RA Compare Effect: set */
+							| TC_CMR_ACPC_CLEAR /* RC Compare Effect: clear */
+							| TC_CMR_CPCTRG /* UP mode with automatic trigger on RC Compare */
 	);
 	
 	tc_write_rc(TC, TC_CHANNEL, (ul_sysclk / ul_div) / freq /8 );
@@ -205,28 +166,18 @@ void task_adc(void){
 
 	/* Selecina canal e inicializa conversão */
 	afec_channel_enable(AFEC_POT, AFEC_POT_CHANNEL);
-	//afec_start_software_conversion(AFEC_POT);
-	
-	
-	/*if (g_is_conversion_done == NULL)
-	printf("Falha em criar o semaforo\n");*/
-	
-	/*xQueueADC = xQueueCreate( 5, sizeof( adcData ));*/
 	TC_init(TC0, ID_TC0, 0, 44000);
 
-
 	while(1){
-		// aguarda por até 500 ms pelo se for liberado entra no if
 		if( xSemaphoreTake(xSemaphore, 500 / portTICK_PERIOD_MS) == pdTRUE ){
 			for(uint16_t i =0; i< SOUND_LEN; i++)
-				printf("%d ",  *(g_sdram + i) );
-			printf(" \n ---------");
+				printf("%d\n",  *(g_sdram + i) );
+			printf("-=-=-=-=-=-=-=-=-=-=-\n");
 			vTaskDelay(500);
 			g_sdram_cnt = 0;
 			config_AFEC_pot(AFEC_POT, AFEC_POT_ID, AFEC_POT_CHANNEL, AFEC_pot_Callback);
 			
 		}
-		// xSemaphoreTake(g_is_conversion_done, ( TickType_t ) 500 / portTICK_PERIOD_MS) == pdTRUE
 	
 	}
 }
@@ -250,16 +201,23 @@ static void configure_console(void) {
 	setbuf(stdout, NULL);
 }
 
-static void BUT_init(void) {
-	/* configura prioridae */
-	NVIC_EnableIRQ(BUT_PIO_ID);
-	NVIC_SetPriority(BUT_PIO_ID, 4);
-
-	/* conf botão como entrada */
-	pio_configure(BUT_PIO, PIO_INPUT, BUT_PIO_PIN_MASK, PIO_DEFAULT);
-	pio_set_debounce_filter(BUT_PIO, BUT_PIO_PIN_MASK, 60);
-	pio_enable_interrupt(BUT_PIO, BUT_PIO_PIN_MASK);
-	pio_handler_set(BUT_PIO, BUT_PIO_ID, BUT_PIO_PIN_MASK, PIO_IT_FALL_EDGE , but_callback);
+static void init(void) {
+	sysclk_init();
+	board_init();
+	configure_console();
+	
+	pmc_enable_periph_clk(LED_ID);
+	pio_configure(LED, PIO_OUTPUT_0, LED_IDX_MASK, PIO_DEFAULT);
+	
+	xSemaphore = xSemaphoreCreateBinary();
+	
+	/* Complete SDRAM configuration */
+	pmc_enable_periph_clk(ID_SDRAMC);
+	sdramc_init((sdramc_memory_dev_t *)&SDRAM_ISSI_IS42S16100E,	sysclk_get_cpu_hz());
+	sdram_enable_unaligned_support();
+	SCB_CleanInvalidateDCache();
+	
+	g_sdram = malloc(SOUND_LEN*2);
 }
 
 /************************************************************************/
@@ -270,37 +228,7 @@ static void BUT_init(void) {
 int main(void) {
 	
 	/* Initialize the SAM system */
-	sysclk_init();
-	board_init();
-	configure_console();
-	
-	/* Complete SDRAM configuration */
-	sdramc_init((sdramc_memory_dev_t *)&SDRAM_ISSI_IS42S16100E,	sysclk_get_cpu_hz());
-	sdram_enable_unaligned_support();
-	SCB_CleanInvalidateDCache();
-
-  xSemaphore = xSemaphoreCreateBinary();
-
-	
-	pmc_enable_periph_clk(PIOO_ID);
-	pio_configure(PIOO, PIO_OUTPUT_0, PIO_IDX_MASK, PIO_DEFAULT);
-
-/*
-
-	for (uint16_t i= 0; i < 100; i++)
-	*(pus +i) = i;
-	
-	
-	for (uint16_t i =0; i < 100; i++)
-	printf("%d ", *(pus +i));
-	
-	while(1){}*/
-	g_sdram = malloc(SOUND_LEN*2);
-
-	
-	xQueueADC = xQueueCreate( 5, sizeof( adcData ));
-	/*g_is_conversion_done = xSemaphoreCreateBinary();*/
-
+	init();
 
 	/* Create task to handler LCD */
 	if (xTaskCreate(task_adc, "adc", TASK_LCD_STACK_SIZE, NULL, TASK_LCD_STACK_PRIORITY, NULL) != pdPASS) {
