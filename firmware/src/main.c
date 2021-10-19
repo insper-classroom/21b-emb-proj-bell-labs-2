@@ -2,7 +2,31 @@
 #include "conf_board.h"
 #include <stdlib.h>
 
-/** RTOS  */
+/* Defines */
+#define TS 11000
+#define SOUND_LEN TS*2
+
+#define LED					PIOD
+#define LED_ID				ID_PIOD
+#define LED_IDX				11
+#define LED_IDX_MASK		(1u << LED_IDX)
+
+#define BUT_PIO				PIOA
+#define BUT_PIO_ID			ID_PIOA
+#define BUT_PIO_PIN			11
+#define BUT_PIO_PIN_MASK	(1 << BUT_PIO_PIN)
+
+/* define DEBUG_SERIAL */
+
+#ifdef DEBUG_SERIAL
+#define USART_COM USART1
+#define USART_COM_ID ID_USART1
+#else
+#define USART_COM USART0
+#define USART_COM_ID ID_USART0
+#endif
+
+/* RTOS  */
 #define TASK_LCD_STACK_SIZE					(1024/sizeof(portSTACK_TYPE))
 #define TASK_LCD_STACK_PRIORITY	            (tskIDLE_PRIORITY)
 
@@ -11,7 +35,7 @@
 #define AFEC_POT_ID ID_AFEC0
 #define AFEC_POT_CHANNEL 0 // Canal do pino PD30
 
-SemaphoreHandle_t xSemaphore;
+SemaphoreHandle_t xSemaphore;      
 
 extern void vApplicationStackOverflowHook(xTaskHandle *pxTask,  signed char *pcTaskName);
 extern void vApplicationIdleHook(void);
@@ -42,15 +66,13 @@ extern void vApplicationMallocFailedHook(void) {
 /* handlers / callbacks                                                 */
 /************************************************************************/
 
-volatile uint16_t g_sdram_cnt = 0 ;
-uint16_t *g_sdram = (uint16_t *)BOARD_SDRAM_ADDR;
+volatile uint32_t g_sdram_cnt = 0 ;
+uint32_t *g_sdram = (uint32_t *)BOARD_SDRAM_ADDR;
+volatile char but_flag = 0;
 
-#define SOUND_LEN 500
-
-#define LED			  PIOD
-#define LED_ID		  ID_PIOD
-#define LED_IDX       11
-#define LED_IDX_MASK  (1u << LED_IDX)
+void but_callback(void) {
+	but_flag = 1;
+}
 
 void pin_toggle(Pio *pio, uint32_t mask){
 	if(pio_get_output_data_status(pio, mask))
@@ -74,13 +96,17 @@ void TC0_Handler(void){
 }
 
 static void AFEC_pot_Callback(void){
-	if(g_sdram_cnt < SOUND_LEN){
-		pin_toggle(LED, LED_IDX_MASK);
-		*(g_sdram + g_sdram_cnt) = afec_channel_get_value(AFEC_POT, AFEC_POT_CHANNEL);
-		g_sdram_cnt++;
-	} else {
-		afec_disable_interrupt(AFEC0,AFEC_POT_CHANNEL );
-		xSemaphoreGiveFromISR(xSemaphore, 0);
+	if(but_flag == 1) {
+		if(g_sdram_cnt < SOUND_LEN){
+			// pin_toggle(LED, LED_IDX_MASK);
+			*(g_sdram + g_sdram_cnt) = afec_channel_get_value(AFEC_POT, AFEC_POT_CHANNEL);
+			g_sdram_cnt++;
+		} else {
+			afec_disable_interrupt(AFEC_POT, AFEC_POT_CHANNEL);
+			xSemaphoreGiveFromISR(xSemaphore, 0);
+			but_flag = 0;
+			g_sdram_cnt = 0;
+		}
 	}
 }
 
@@ -166,19 +192,24 @@ void task_adc(void){
 
 	/* Selecina canal e inicializa conversão */
 	afec_channel_enable(AFEC_POT, AFEC_POT_CHANNEL);
-	TC_init(TC0, ID_TC0, 0, 44000);
+	TC_init(TC0, ID_TC0, 0, TS);
 
 	while(1){
 		if( xSemaphoreTake(xSemaphore, 500 / portTICK_PERIOD_MS) == pdTRUE ){
-			for(uint16_t i =0; i< SOUND_LEN; i++)
-				printf("%d\n",  *(g_sdram + i) );
+			printf("init\n");
+			taskENTER_CRITICAL();
+			for(uint32_t i =0; i< SOUND_LEN; i++) {
+				/*while(!usart_is_tx_ready(USART0)) {vTaskDelay(1 / portTICK_PERIOD_MS);}
+				usart_write(USART0, *(g_sdram + i) >> 7);
+				while(!usart_is_tx_ready(USART0)) {vTaskDelay(1 / portTICK_PERIOD_MS);}
+				usart_write(USART0, *(g_sdram + i));*/
+				printf("%d\n", *(g_sdram + i));
+			}
+			taskEXIT_CRITICAL();
 			printf("-=-=-=-=-=-=-=-=-=-=-\n");
-			vTaskDelay(500);
-			g_sdram_cnt = 0;
-			config_AFEC_pot(AFEC_POT, AFEC_POT_ID, AFEC_POT_CHANNEL, AFEC_pot_Callback);
-			
+			vTaskDelay(500 / portTICK_PERIOD_MS);
+			afec_enable_interrupt(AFEC_POT, AFEC_POT_CHANNEL);
 		}
-	
 	}
 }
 
@@ -189,22 +220,41 @@ void task_adc(void){
 static void configure_console(void) {
 	const usart_serial_options_t uart_serial_options = {
 		.baudrate = CONF_UART_BAUDRATE,
+		#if (defined CONF_UART_CHAR_LENGTH)
 		.charlength = CONF_UART_CHAR_LENGTH,
+		#endif
 		.paritytype = CONF_UART_PARITY,
+		#if (defined CONF_UART_STOP_BITS)
 		.stopbits = CONF_UART_STOP_BITS,
+		#endif
 	};
 
 	/* Configure console UART. */
 	stdio_serial_init(CONF_UART, &uart_serial_options);
 
 	/* Specify that stdout should not be buffered. */
+	#if defined(__GNUC__)
 	setbuf(stdout, NULL);
+	#else
+	/* Already the case in IAR's Normal DLIB default configuration: printf()
+	* emits one character at a time.
+	*/
+	#endif
 }
 
 static void init(void) {
 	sysclk_init();
 	board_init();
 	configure_console();
+	
+	NVIC_EnableIRQ(BUT_PIO_ID);
+	NVIC_SetPriority(BUT_PIO_ID, 4);
+
+	/* conf botão como entrada */
+	pio_configure(BUT_PIO, PIO_INPUT, BUT_PIO_PIN_MASK, PIO_DEFAULT);
+	pio_set_debounce_filter(BUT_PIO, BUT_PIO_PIN_MASK, 60);
+	pio_enable_interrupt(BUT_PIO, BUT_PIO_PIN_MASK);
+	pio_handler_set(BUT_PIO, BUT_PIO_ID, BUT_PIO_PIN_MASK, PIO_IT_FALL_EDGE , but_callback);
 	
 	pmc_enable_periph_clk(LED_ID);
 	pio_configure(LED, PIO_OUTPUT_0, LED_IDX_MASK, PIO_DEFAULT);
@@ -217,7 +267,7 @@ static void init(void) {
 	sdram_enable_unaligned_support();
 	SCB_CleanInvalidateDCache();
 	
-	g_sdram = malloc(SOUND_LEN*2);
+	//g_sdram = malloc(SOUND_LEN*2);
 }
 
 /************************************************************************/
