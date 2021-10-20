@@ -17,7 +17,7 @@
 #define BUT_PIO_PIN			11
 #define BUT_PIO_PIN_MASK	(1 << BUT_PIO_PIN)
 
-#define DEBUG_SERIAL
+// #define DEBUG_SERIAL
 
 #ifdef DEBUG_SERIAL
 #define USART_COM USART1
@@ -264,16 +264,19 @@ void task_adc(void){
 	/* Selecina canal e inicializa conversão */
 	afec_channel_enable(AFEC_POT, AFEC_POT_CHANNEL);
 	TC_init(TC0, ID_TC0, 0, TS);
+	
+	config_usart0();
+	hc05_init();
 
 	while(1){
 		if( xSemaphoreTake(xSemaphore, 500 / portTICK_PERIOD_MS) == pdTRUE ){
 			printf("init\n");
 			taskENTER_CRITICAL();
 			for(uint32_t i =0; i< SOUND_LEN; i++) {
-				/*while(!usart_is_tx_ready(USART0)) {vTaskDelay(1 / portTICK_PERIOD_MS);}
-				usart_write(USART0, *(g_sdram + i) >> 7);
-				while(!usart_is_tx_ready(USART0)) {vTaskDelay(1 / portTICK_PERIOD_MS);}
-				usart_write(USART0, *(g_sdram + i));*/
+				//while(!usart_is_tx_ready(USART0)) {vTaskDelay(1 / portTICK_PERIOD_MS);}
+				//usart_write(USART0, *(g_sdram + i) >> 7);
+				//while(!usart_is_tx_ready(USART0)) {vTaskDelay(1 / portTICK_PERIOD_MS);}
+				//usart_write(USART0, *(g_sdram + i));
 				printf("%d\n", *(g_sdram + i));
 			}
 			taskEXIT_CRITICAL();
@@ -287,8 +290,6 @@ void task_adc(void){
 void task_bluetooth(void) {
 	printf("Task Bluetooth started \n");
 	printf("Inicializando HC05 \n");
-	config_usart0();
-	hc05_init();
 	
 	char button1 = '0';
 	char eof = 'X';
@@ -379,9 +380,9 @@ int main(void) {
 	init();
 
 	/* Create task to handler LCD */
-	if (xTaskCreate(task_bluetooth, "BLT", TASK_BLUETOOTH_STACK_SIZE, NULL,	TASK_BLUETOOTH_STACK_PRIORITY, NULL) != pdPASS) {
-		printf("Failed to create test adc task\r\n");
-	}
+	//if (xTaskCreate(task_bluetooth, "BLT", TASK_BLUETOOTH_STACK_SIZE, NULL,	TASK_BLUETOOTH_STACK_PRIORITY, NULL) != pdPASS) {
+		//printf("Failed to create test adc task\r\n");
+	//}
 	
 	if (xTaskCreate(task_adc, "adc", TASK_LCD_STACK_SIZE, NULL, TASK_LCD_STACK_PRIORITY, NULL) != pdPASS) {
 		printf("Failed to create test adc task\r\n");
