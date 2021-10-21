@@ -5,19 +5,29 @@
 
 /* Defines */
 #define TS 11000
-#define SOUND_LEN TS*2
+#define SOUND_LEN TS*3
 
 #define LED					PIOD
 #define LED_ID				ID_PIOD
 #define LED_IDX				11
 #define LED_IDX_MASK		(1u << LED_IDX)
 
+#define STEP				PIOC
+#define STEP_ID				ID_PIOC
+#define STEP_IDX			19
+#define STEP_IDX_MASK		(1u << STEP_IDX)
+
+#define GATE				PIOA
+#define GATE_ID				ID_PIOA
+#define GATE_IDX			6
+#define GATE_IDX_MASK		(1u << GATE_IDX)
+
 #define BUT_PIO				PIOA
 #define BUT_PIO_ID			ID_PIOA
 #define BUT_PIO_PIN			11
 #define BUT_PIO_PIN_MASK	(1 << BUT_PIO_PIN)
 
-// #define DEBUG_SERIAL
+#define DEBUG_SERIAL
 
 #ifdef DEBUG_SERIAL
 #define USART_COM USART1
@@ -75,15 +85,16 @@ uint32_t *g_sdram = (uint32_t *)BOARD_SDRAM_ADDR;
 volatile char but_flag = 0;
 volatile int bluetooth_init = 0;
 
-void but_callback(void) {
-	but_flag = 1;
-}
-
 void pin_toggle(Pio *pio, uint32_t mask){
 	if(pio_get_output_data_status(pio, mask))
 		pio_clear(pio, mask);
 	else
 		pio_set(pio,mask);
+}
+
+void but_callback(void) {
+	if(but_flag == 0) but_flag = 1;
+	pin_toggle(STEP, STEP_IDX_MASK);
 }
 
 void TC0_Handler(void){
@@ -109,7 +120,6 @@ static void AFEC_pot_Callback(void){
 		} else {
 			afec_disable_interrupt(AFEC_POT, AFEC_POT_CHANNEL);
 			xSemaphoreGiveFromISR(xSemaphore, 0);
-			but_flag = 0;
 			g_sdram_cnt = 0;
 		}
 	}
@@ -185,130 +195,24 @@ static void config_AFEC_pot(Afec *afec, uint32_t afec_id, uint32_t afec_channel,
 	NVIC_SetPriority(afec_id, 4);
 	NVIC_EnableIRQ(afec_id);
 }
-
-uint32_t usart_puts(uint8_t *pstring) {
-	uint32_t i ;
-
-	while(*(pstring + i))
-	if(uart_is_tx_empty(USART_COM))
-	usart_serial_putchar(USART_COM, *(pstring+i++));
-}
-
-void usart_put_string(Usart *usart, char str[]) {
-	usart_serial_write_packet(usart, str, strlen(str));
-}
-
-int usart_get_string(Usart *usart, char buffer[], int bufferlen, uint timeout_ms) {
-	uint timecounter = timeout_ms;
-	uint32_t rx;
-	uint32_t counter = 0;
-
-	while( (timecounter > 0) && (counter < bufferlen - 1)) {
-		if(usart_read(usart, &rx) == 0) {
-			buffer[counter++] = rx;
-		}
-		else{
-			timecounter--;
-			vTaskDelay(1);
-		}
-	}
-	buffer[counter] = 0x00;
-	return counter;
-}
-
-void usart_send_command(Usart *usart, char buffer_rx[], int bufferlen,
-char buffer_tx[], int timeout) {
-	usart_put_string(usart, buffer_tx);
-	usart_get_string(usart, buffer_rx, bufferlen, timeout);
-}
-
-void config_usart0(void) {
-	sysclk_enable_peripheral_clock(ID_USART0);
-	usart_serial_options_t config;
-	config.baudrate = 9600;
-	config.charlength = US_MR_CHRL_8_BIT;
-	config.paritytype = US_MR_PAR_NO;
-	config.stopbits = false;
-	usart_serial_init(USART0, &config);
-	usart_enable_tx(USART0);
-	usart_enable_rx(USART0);
-
-	// RX - PB0  TX - PB1
-	pio_configure(PIOB, PIO_PERIPH_C, (1 << 0), PIO_DEFAULT);
-	pio_configure(PIOB, PIO_PERIPH_C, (1 << 1), PIO_DEFAULT);
-}
-
-int hc05_init(void) {
-	char buffer_rx[128];
-	usart_send_command(USART_COM, buffer_rx, 1000, "AT", 100);
-	vTaskDelay( 500 / portTICK_PERIOD_MS);
-	usart_send_command(USART_COM, buffer_rx, 1000, "AT", 100);
-	vTaskDelay( 500 / portTICK_PERIOD_MS);
-	usart_send_command(USART_COM, buffer_rx, 1000, "AT+NAMEFeijoada", 100);
-	vTaskDelay( 500 / portTICK_PERIOD_MS);
-	usart_send_command(USART_COM, buffer_rx, 1000, "AT", 100);
-	vTaskDelay( 500 / portTICK_PERIOD_MS);
-	usart_send_command(USART_COM, buffer_rx, 1000, "AT+PIN4321", 100);
-	vTaskDelay( 500 / portTICK_PERIOD_MS);
-}
-
 /************************************************************************/
 /* TASKS                                                                */
 /************************************************************************/
 
-void task_adc(void){
-
-	/* inicializa e configura adc */
-	config_AFEC_pot(AFEC_POT, AFEC_POT_ID, AFEC_POT_CHANNEL, AFEC_pot_Callback);
-
-	/* Selecina canal e inicializa conversão */
-	afec_channel_enable(AFEC_POT, AFEC_POT_CHANNEL);
-	TC_init(TC0, ID_TC0, 0, TS);
-	
-	config_usart0();
-	hc05_init();
-
+void task_adc(void){        
 	while(1){
 		if( xSemaphoreTake(xSemaphore, 500 / portTICK_PERIOD_MS) == pdTRUE ){
-			printf("init\n");
+			printf("A");
 			taskENTER_CRITICAL();
 			for(uint32_t i =0; i< SOUND_LEN; i++) {
-				//while(!usart_is_tx_ready(USART0)) {vTaskDelay(1 / portTICK_PERIOD_MS);}
-				//usart_write(USART0, *(g_sdram + i) >> 7);
-				//while(!usart_is_tx_ready(USART0)) {vTaskDelay(1 / portTICK_PERIOD_MS);}
-				//usart_write(USART0, *(g_sdram + i));
 				printf("%d\n", *(g_sdram + i));
 			}
 			taskEXIT_CRITICAL();
-			printf("-=-=-=-=-=-=-=-=-=-=-\n");
+			printf("X");
 			vTaskDelay(500 / portTICK_PERIOD_MS);
+			but_flag = 0;
 			afec_enable_interrupt(AFEC_POT, AFEC_POT_CHANNEL);
 		}
-	}
-}
-
-void task_bluetooth(void) {
-	printf("Task Bluetooth started \n");
-	printf("Inicializando HC05 \n");
-	
-	char button1 = '0';
-	char eof = 'X';
-
-	// Task não deve retornar.
-	while(1) {
-		// envia status botão
-		while(!usart_is_tx_ready(USART_COM)) {
-			vTaskDelay(10 / portTICK_PERIOD_MS);
-		}
-		usart_write(USART_COM, button1);
-		
-		// envia fim de pacote
-		while(!usart_is_tx_ready(USART_COM)) {
-			vTaskDelay(10 / portTICK_PERIOD_MS);
-		}
-		usart_write(USART_COM, eof);
-
-		vTaskDelay(500 / portTICK_PERIOD_MS);
 	}
 }
 
@@ -346,17 +250,30 @@ static void init(void) {
 	board_init();
 	configure_console();
 	
-	NVIC_EnableIRQ(BUT_PIO_ID);
-	NVIC_SetPriority(BUT_PIO_ID, 4);
+	/* inicializa e configura adc */
+	config_AFEC_pot(AFEC_POT, AFEC_POT_ID, AFEC_POT_CHANNEL, AFEC_pot_Callback);
+
+	/* Selecina canal e inicializa conversão */
+	afec_channel_enable(AFEC_POT, AFEC_POT_CHANNEL);
+	TC_init(TC0, ID_TC0, 0, TS);
+	
+	/*pmc_enable_periph_clk(GATE_ID);
+	pio_configure(GATE, PIO_INPUT, GATE_IDX_MASK, PIO_DEFAULT);*/
+	
+	NVIC_EnableIRQ(GATE_ID);
+	NVIC_SetPriority(GATE_ID, 4);
 
 	/* conf botão como entrada */
-	pio_configure(BUT_PIO, PIO_INPUT, BUT_PIO_PIN_MASK, PIO_DEFAULT);
-	pio_set_debounce_filter(BUT_PIO, BUT_PIO_PIN_MASK, 60);
-	pio_enable_interrupt(BUT_PIO, BUT_PIO_PIN_MASK);
-	pio_handler_set(BUT_PIO, BUT_PIO_ID, BUT_PIO_PIN_MASK, PIO_IT_FALL_EDGE , but_callback);
+	pio_configure(GATE, PIO_INPUT, GATE_IDX_MASK, PIO_DEFAULT);
+	pio_set_debounce_filter(GATE, GATE_IDX_MASK, 60);
+	pio_enable_interrupt(GATE, GATE_IDX_MASK);
+	pio_handler_set(GATE, GATE_ID, GATE_IDX_MASK, PIO_IT_FALL_EDGE , but_callback);
 	
 	pmc_enable_periph_clk(LED_ID);
 	pio_configure(LED, PIO_OUTPUT_0, LED_IDX_MASK, PIO_DEFAULT);
+	
+	pmc_enable_periph_clk(STEP_ID);
+	pio_configure(STEP, PIO_OUTPUT_0, STEP_IDX_MASK, PIO_DEFAULT);
 	
 	xSemaphore = xSemaphoreCreateBinary();
 	
@@ -365,8 +282,6 @@ static void init(void) {
 	sdramc_init((sdramc_memory_dev_t *)&SDRAM_ISSI_IS42S16100E,	sysclk_get_cpu_hz());
 	sdram_enable_unaligned_support();
 	SCB_CleanInvalidateDCache();
-	
-	//g_sdram = malloc(SOUND_LEN*2);
 }
 
 /************************************************************************/
@@ -378,17 +293,11 @@ int main(void) {
 	
 	/* Initialize the SAM system */
 	init();
-
-	/* Create task to handler LCD */
-	//if (xTaskCreate(task_bluetooth, "BLT", TASK_BLUETOOTH_STACK_SIZE, NULL,	TASK_BLUETOOTH_STACK_PRIORITY, NULL) != pdPASS) {
-		//printf("Failed to create test adc task\r\n");
-	//}
 	
 	if (xTaskCreate(task_adc, "adc", TASK_LCD_STACK_SIZE, NULL, TASK_LCD_STACK_PRIORITY, NULL) != pdPASS) {
 		printf("Failed to create test adc task\r\n");
 	}
 	
-
 	/* Start the scheduler. */
 	vTaskStartScheduler();
 	
