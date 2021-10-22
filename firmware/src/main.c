@@ -12,10 +12,25 @@
 #define LED_IDX				11
 #define LED_IDX_MASK		(1u << LED_IDX)
 
-#define STEP				PIOC
-#define STEP_ID				ID_PIOC
-#define STEP_IDX			19
-#define STEP_IDX_MASK		(1u << STEP_IDX)
+#define IN1_M1_A			PIOD
+#define IN1_M1_A_ID			ID_PIOD
+#define IN1_M1_A_IDX		28
+#define IN1_M1_A_IDX_MASK (1 << IN1_M1_A_IDX)
+
+#define IN2_M1_B			PIOA
+#define IN2_M1_B_ID			ID_PIOA
+#define IN2_M1_B_IDX		0
+#define IN2_M1_B_IDX_MASK (1 << IN2_M1_B_IDX)
+
+#define IN3_VERD			PIOC
+#define IN3_VERD_ID			ID_PIOC
+#define IN3_VERD_IDX		17
+#define IN3_VERD_IDX_MASK (1 << IN3_VERD_IDX)
+
+#define IN4_VERM			PIOC
+#define IN4_VERM_ID			ID_PIOC
+#define IN4_VERM_IDX		30
+#define IN4_VERM_IDX_MASK (1 << IN4_VERM_IDX)
 
 #define GATE				PIOA
 #define GATE_ID				ID_PIOA
@@ -94,10 +109,14 @@ void pin_toggle(Pio *pio, uint32_t mask){
 
 void but_callback(void) {
 	if(but_flag == 0) but_flag = 1;
-	pin_toggle(STEP, STEP_IDX_MASK);
+	pio_set(IN1_M1_A, IN1_M1_A_IDX_MASK);
+	pio_clear(IN2_M1_B, IN2_M1_B_IDX_MASK);
+	pio_set(IN3_VERD, IN3_VERD_IDX_MASK);
+	pio_clear(IN4_VERM, IN4_VERM_IDX_MASK);
+	delay_ms(500);
 }
 
-void TC0_Handler(void){
+void TC0_Handler(void){    
 	volatile uint32_t ul_dummy;
 
 	/****************************************************************
@@ -260,20 +279,34 @@ static void init(void) {
 	/*pmc_enable_periph_clk(GATE_ID);
 	pio_configure(GATE, PIO_INPUT, GATE_IDX_MASK, PIO_DEFAULT);*/
 	
-	NVIC_EnableIRQ(GATE_ID);
-	NVIC_SetPriority(GATE_ID, 4);
+	NVIC_EnableIRQ(BUT_PIO_ID);
+	NVIC_SetPriority(BUT_PIO_ID, 4);
 
 	/* conf botão como entrada */
-	pio_configure(GATE, PIO_INPUT, GATE_IDX_MASK, PIO_DEFAULT);
-	pio_set_debounce_filter(GATE, GATE_IDX_MASK, 60);
-	pio_enable_interrupt(GATE, GATE_IDX_MASK);
-	pio_handler_set(GATE, GATE_ID, GATE_IDX_MASK, PIO_IT_FALL_EDGE , but_callback);
+	pio_configure(BUT_PIO, PIO_INPUT, BUT_PIO_PIN_MASK, PIO_DEFAULT);
+	pio_set_debounce_filter(BUT_PIO, BUT_PIO_PIN_MASK, 60);
+	pio_enable_interrupt(BUT_PIO, BUT_PIO_PIN_MASK);
+	pio_handler_set(BUT_PIO, BUT_PIO_ID, BUT_PIO_PIN_MASK, PIO_IT_FALL_EDGE , but_callback);
 	
 	pmc_enable_periph_clk(LED_ID);
 	pio_configure(LED, PIO_OUTPUT_0, LED_IDX_MASK, PIO_DEFAULT);
 	
-	pmc_enable_periph_clk(STEP_ID);
-	pio_configure(STEP, PIO_OUTPUT_0, STEP_IDX_MASK, PIO_DEFAULT);
+	pmc_enable_periph_clk(IN1_M1_A_ID);
+	pio_set_output(IN1_M1_A, IN1_M1_A_IDX_MASK, 1, 0, 0);
+	
+	pmc_enable_periph_clk(IN2_M1_B_ID);
+	pio_set_output(IN2_M1_B, IN2_M1_B_IDX_MASK, 1, 0, 0);
+	
+	pmc_enable_periph_clk(IN3_VERD_ID);
+	pio_set_output(IN3_VERD, IN3_VERD_IDX_MASK, 1, 0, 0);
+	
+	pmc_enable_periph_clk(IN4_VERM_ID);
+	pio_set_output(IN4_VERM, IN4_VERM_IDX_MASK, 1, 0, 0);
+	
+	pio_clear(IN1_M1_A, IN1_M1_A_IDX_MASK); //Desaciona Motor M1_A
+	pio_clear(IN2_M1_B, IN2_M1_B_IDX_MASK); //Desaciona Motor M1_B
+	pio_set(IN3_VERD, IN3_VERD_IDX_MASK); //Desaciona a cor VERDE da fita
+	pio_set(IN4_VERM, IN4_VERM_IDX_MASK); //Desaciona a cor VERMELHA da fita
 	
 	xSemaphore = xSemaphoreCreateBinary();
 	
