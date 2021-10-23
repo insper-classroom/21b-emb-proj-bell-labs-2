@@ -6,7 +6,7 @@ import time
 
 import numpy as np
 from scipy.io.wavfile import write
-import soundfile as sf
+from pydub import AudioSegment
 
 from google.cloud import speech
 
@@ -20,26 +20,24 @@ client = speech.SpeechClient()
 
 def convert(data):
 
-    audio = np.array(data, dtype=np.int16)
+    audio = np.array(data, dtype=np.int)
     audio = 3.3*audio/4095
 
-    for file in os.listdir():
-        if(file == "output.flac"):
-            os.remove(file)
-
-    sf.write('output.flac', audio, TS)
+    # write('output.wav', TS, audio)
+    song = AudioSegment.from_wav('output.wav')
+    song.export('output.mp3', format = "mp3")
 
 def transcript_google():
 
     print("Starting transcript...")
 
     config = speech.RecognitionConfig(
-        encoding=speech.RecognitionConfig.AudioEncoding.FLAC,
+        encoding=speech.RecognitionConfig.AudioEncoding.MP3,
         sample_rate_hertz=TS,
         language_code="pt-BR",
     )
 
-    with open("output.flac", 'rb') as f:
+    with open("output.mp3", 'rb') as f:
         content = f.read()
 
     audio = { "content": content }
@@ -47,6 +45,7 @@ def transcript_google():
     # Detects speech in the audio file
     response = client.recognize(config=config, audio=audio)
 
+    print(response)
     for result in response.results:
         print("Transcript: {}".format(result.alternatives[0].transcript))
 
@@ -68,12 +67,11 @@ if __name__ == "__main__":
 
     serial = serial.Serial(port = com, baudrate = baudrate)
 
-    audio = list()
-
     while True:
         print(f'Waiting for data on {com} w/ baudrate {baudrate}...')
         data = serial.readline().decode('ASCII').replace('\n', '')
         if (data == START_CHAR):
+            audio = list()
             data = serial.readline().decode('ASCII').replace('\n', '')
             while (data != END_CHAR):
                 audio.append(data)
