@@ -7,30 +7,10 @@
 #define TS 11000
 #define SOUND_LEN TS*3
 
-#define LED					PIOD
-#define LED_ID				ID_PIOD
-#define LED_IDX				11
+#define LED					PIOC
+#define LED_ID				ID_PIOC
+#define LED_IDX				8
 #define LED_IDX_MASK		(1u << LED_IDX)
-
-#define IN1_M1_A			PIOD
-#define IN1_M1_A_ID			ID_PIOD
-#define IN1_M1_A_IDX		28
-#define IN1_M1_A_IDX_MASK (1 << IN1_M1_A_IDX)
-
-#define IN2_M1_B			PIOA
-#define IN2_M1_B_ID			ID_PIOA
-#define IN2_M1_B_IDX		0
-#define IN2_M1_B_IDX_MASK (1 << IN2_M1_B_IDX)
-
-#define IN3_VERD			PIOC
-#define IN3_VERD_ID			ID_PIOC
-#define IN3_VERD_IDX		17
-#define IN3_VERD_IDX_MASK (1 << IN3_VERD_IDX)
-
-#define IN4_VERM			PIOC
-#define IN4_VERM_ID			ID_PIOC
-#define IN4_VERM_IDX		30
-#define IN4_VERM_IDX_MASK (1 << IN4_VERM_IDX)
 
 #define GATE				PIOA
 #define GATE_ID				ID_PIOA
@@ -109,11 +89,7 @@ void pin_toggle(Pio *pio, uint32_t mask){
 
 void but_callback(void) {
 	if(but_flag == 0) but_flag = 1;
-	pio_set(IN1_M1_A, IN1_M1_A_IDX_MASK);
-	pio_clear(IN2_M1_B, IN2_M1_B_IDX_MASK);
-	pio_set(IN3_VERD, IN3_VERD_IDX_MASK);
-	pio_clear(IN4_VERM, IN4_VERM_IDX_MASK);
-	delay_ms(500);
+	pin_toggle(LED, LED_IDX_MASK);
 }
 
 void TC0_Handler(void){    
@@ -137,6 +113,7 @@ static void AFEC_pot_Callback(void){
 			*(g_sdram + g_sdram_cnt) = afec_channel_get_value(AFEC_POT, AFEC_POT_CHANNEL);
 			g_sdram_cnt++;
 		} else {
+			pin_toggle(LED, LED_IDX_MASK);
 			afec_disable_interrupt(AFEC_POT, AFEC_POT_CHANNEL);
 			xSemaphoreGiveFromISR(xSemaphore, 0);
 			g_sdram_cnt = 0;
@@ -221,13 +198,13 @@ static void config_AFEC_pot(Afec *afec, uint32_t afec_id, uint32_t afec_channel,
 void task_adc(void){        
 	while(1){
 		if( xSemaphoreTake(xSemaphore, 500 / portTICK_PERIOD_MS) == pdTRUE ){
-			printf("A");
+			printf("A\n");
 			taskENTER_CRITICAL();
 			for(uint32_t i =0; i< SOUND_LEN; i++) {
 				printf("%d\n", *(g_sdram + i));
 			}
 			taskEXIT_CRITICAL();
-			printf("X");
+			printf("X\n");
 			vTaskDelay(500 / portTICK_PERIOD_MS);
 			but_flag = 0;
 			afec_enable_interrupt(AFEC_POT, AFEC_POT_CHANNEL);
@@ -290,23 +267,7 @@ static void init(void) {
 	
 	pmc_enable_periph_clk(LED_ID);
 	pio_configure(LED, PIO_OUTPUT_0, LED_IDX_MASK, PIO_DEFAULT);
-	
-	pmc_enable_periph_clk(IN1_M1_A_ID);
-	pio_set_output(IN1_M1_A, IN1_M1_A_IDX_MASK, 1, 0, 0);
-	
-	pmc_enable_periph_clk(IN2_M1_B_ID);
-	pio_set_output(IN2_M1_B, IN2_M1_B_IDX_MASK, 1, 0, 0);
-	
-	pmc_enable_periph_clk(IN3_VERD_ID);
-	pio_set_output(IN3_VERD, IN3_VERD_IDX_MASK, 1, 0, 0);
-	
-	pmc_enable_periph_clk(IN4_VERM_ID);
-	pio_set_output(IN4_VERM, IN4_VERM_IDX_MASK, 1, 0, 0);
-	
-	pio_clear(IN1_M1_A, IN1_M1_A_IDX_MASK); //Desaciona Motor M1_A
-	pio_clear(IN2_M1_B, IN2_M1_B_IDX_MASK); //Desaciona Motor M1_B
-	pio_set(IN3_VERD, IN3_VERD_IDX_MASK); //Desaciona a cor VERDE da fita
-	pio_set(IN4_VERM, IN4_VERM_IDX_MASK); //Desaciona a cor VERMELHA da fita
+	pin_toggle(LED, LED_IDX_MASK);
 	
 	xSemaphore = xSemaphoreCreateBinary();
 	
