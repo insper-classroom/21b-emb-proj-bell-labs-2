@@ -67,8 +67,12 @@ def get_command(sentence):
     stems = [stemmer.stem(word) for word in words]
 
     if('lig' in stems or 'acion' in stems or 'acend' in stems):
+        # se ligar/acionar/acender estiver contido nas palavras, retorna o comando para acender o LED
+
         return b'1'
-    elif('deslig' in stems):
+    elif('deslig' in stems or 'apag' in stems):
+        # se desligar/apagar estiver contido nas palavras, retorna o comando para apagar o LED
+
         return b'0'
     elif('pisc' in stems or 'pisq' in stems or 'pic' in stems or 'piq' in stems or 'pixel' in stems):
         return b'2'
