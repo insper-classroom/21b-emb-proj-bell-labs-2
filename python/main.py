@@ -66,7 +66,7 @@ def get_command(sentence):
     words = sentence.split(' ')
     stems = [stemmer.stem(word) for word in words]
 
-    if('lig' in stems):
+    if('lig' in stems or 'acion' in stems or 'acend' in stems):
         return b'1'
     elif('deslig' in stems):
         return b'0'
