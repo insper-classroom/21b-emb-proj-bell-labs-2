@@ -1,3 +1,5 @@
+# Imports
+
 import os
 import sys
 import signal
@@ -9,35 +11,43 @@ from scipy.io.wavfile import write
 from pydub import AudioSegment
 
 from google.cloud import speech
+import nltk
+from nltk.stem.snowball import SnowballStemmer
+
+# Autenticação
 
 os.environ['GOOGLE_APPLICATION_CREDENTIALS']= 'google_credentials.json'
+
+# Variáveis globais
 
 TS = 11000
 START_CHAR = 'A'
 END_CHAR = 'X'
 
 client = speech.SpeechClient()
+stemmer = SnowballStemmer('portuguese')
+
+# Função para converter para audio
 
 def convert(data):
 
-    audio = np.array(data, dtype=np.int)
-    audio = 3.3*audio/4095
+    audio = np.array(data, dtype=np.int16)
 
-    # write('output.wav', TS, audio)
-    song = AudioSegment.from_wav('output.wav')
-    song.export('output.mp3', format = "mp3")
+    write('output.wav', TS, audio)
+
+# Função de transcrição do audio
 
 def transcript_google():
 
     print("Starting transcript...")
 
     config = speech.RecognitionConfig(
-        encoding=speech.RecognitionConfig.AudioEncoding.MP3,
+        encoding=speech.RecognitionConfig.AudioEncoding.LINEAR16,
         sample_rate_hertz=TS,
         language_code="pt-BR",
     )
 
-    with open("output.mp3", 'rb') as f:
+    with open("output.wav", 'rb') as f:
         content = f.read()
 
     audio = { "content": content }
@@ -45,16 +55,33 @@ def transcript_google():
     # Detects speech in the audio file
     response = client.recognize(config=config, audio=audio)
 
-    print(response)
     for result in response.results:
-        print("Transcript: {}".format(result.alternatives[0].transcript))
+        if('feij' in result.alternatives[0].transcript):
+            return result.alternatives[0].transcript
 
-def handler():
-    res = input("Do you want to exit? y/n ")
-    if res == 'y': 
-        exit(1)
+# Funnção para devolver o comando que deve ser passado pra máquina
+
+def get_command(sentence):
+
+    words = sentence.split(' ')
+    stems = [stemmer.stem(word) for word in words]
+
+    if('lig' in stems):
+        return b'1'
+    elif('deslig' in stems):
+        return b'0'
+    elif('pisc' in stems or 'pisq' in stems or 'pic' in stems or 'piq' in stems or 'pixel' in stems):
+        return b'2'
+    else:
+        print(stems)
+        return b'3'
+
+# Função principal
 
 if __name__ == "__main__":
+
+    # Argumentos que devem ser passados
+
     if (len(sys.argv) == 1):
         print("ERROR: No COM argument.")
         exit(0)
@@ -65,9 +92,14 @@ if __name__ == "__main__":
     com = sys.argv[1]
     baudrate = sys.argv[2]
 
+    # Iniciar porta serial
+
     serial = serial.Serial(port = com, baudrate = baudrate)
 
+    # Loop principal
+
     while True:
+        
         print(f'Waiting for data on {com} w/ baudrate {baudrate}...')
         data = serial.readline().decode('ASCII').replace('\n', '')
         if (data == START_CHAR):
@@ -79,7 +111,9 @@ if __name__ == "__main__":
             
             print(f'Received {len(audio)} entries')
             convert(audio)
-            transcript_google()
-            handler()
+            transcript = transcript_google()
+            command = get_command(transcript)
+            print(command)
+            serial.write(command)
 
         time.sleep(5)
