@@ -3,8 +3,9 @@
 #include "conf_board.h"
 #include <stdlib.h>
 
-/* Defines */
-#define TS 11000
+/* DEFINES */
+
+#define TS 11000 // Hz
 #define DURATION 3 //s
 #define SOUND_LEN TS*DURATION
 
@@ -39,7 +40,7 @@
 #define USART_COM_ID ID_USART0
 #endif
 
-/* RTOS  */
+/* TASKS  */
 #define TASK_LCD_STACK_SIZE					  (1024/sizeof(portSTACK_TYPE))
 #define TASK_LCD_STACK_PRIORITY	              (tskIDLE_PRIORITY)
 
@@ -49,9 +50,9 @@
 /* AFEC */
 #define AFEC_POT AFEC0
 #define AFEC_POT_ID ID_AFEC0
-#define AFEC_POT_CHANNEL 0 // Canal do pino PD30
+#define AFEC_POT_CHANNEL 0 // Canal do pino PD30      
 
-SemaphoreHandle_t xSemaphore;      
+/* RTOS */
 
 extern void vApplicationStackOverflowHook(xTaskHandle *pxTask,  signed char *pcTaskName);
 extern void vApplicationIdleHook(void);
@@ -78,16 +79,21 @@ extern void vApplicationMallocFailedHook(void) {
 	configASSERT( ( volatile void * ) NULL );
 }
 
-/************************************************************************/
-/* handlers / callbacks                                                 */
-/************************************************************************/
+/* Variáveis Globais / Flags / Semafaros */
 
+SemaphoreHandle_t xSemaphore;
 volatile uint32_t g_sdram_cnt = 0 ;
 uint32_t *g_sdram = (uint32_t *)BOARD_SDRAM_ADDR;
 volatile char but_flag = 0;
 volatile char command_flag = 0;
 
+/************************************************************************/
+/* handlers / callbacks / configs                                       */
+/************************************************************************/
+
 void pin_toggle(Pio *pio, uint32_t mask){
+	// piscar o LED
+	
 	if(pio_get_output_data_status(pio, mask))
 		pio_clear(pio, mask);
 	else
@@ -95,6 +101,8 @@ void pin_toggle(Pio *pio, uint32_t mask){
 }
 
 int usart_get_string(Usart *usart, char buffer[], int bufferlen, uint timeout_ms) {
+	// função para receber a resposta do Python
+	
 	uint timecounter = timeout_ms;
 	uint32_t rx;
 	uint32_t counter = 0;
@@ -113,8 +121,9 @@ int usart_get_string(Usart *usart, char buffer[], int bufferlen, uint timeout_ms
 }
 
 void but_callback(void) {
+	// callback button/gate
+	
 	if(but_flag == 0) but_flag = 1;
-	// pin_toggle(LED, LED_IDX_MASK);
 }
 
 void TC0_Handler(void){    
@@ -134,11 +143,13 @@ void TC0_Handler(void){
 static void AFEC_pot_Callback(void){
 	if(but_flag == 1) {
 		if(g_sdram_cnt < SOUND_LEN){
-			// pin_toggle(LED, LED_IDX_MASK);
+			// enquanto não coletar todas as samples, continua fazendo append na sdram
+			
 			*(g_sdram + g_sdram_cnt) = afec_channel_get_value(AFEC_POT, AFEC_POT_CHANNEL);
 			g_sdram_cnt++;
 		} else {
-			// pin_toggle(LED, LED_IDX_MASK);
+			// disabilita afec, aciona semafaro e zera a contagem do sdram
+			
 			afec_disable_interrupt(AFEC_POT, AFEC_POT_CHANNEL);
 			xSemaphoreGiveFromISR(xSemaphore, 0);
 			g_sdram_cnt = 0;
@@ -234,13 +245,17 @@ void config_usart0(void) {
 }
 
 /************************************************************************/
-/* TASKS                                                                */
+/* Tasks functions                                                      */
 /************************************************************************/
 
 void task_adc(void){        
 	while(1){
 		if( xSemaphoreTake(xSemaphore, 500 / portTICK_PERIOD_MS) == pdTRUE ){
+			// o A inicia a transmissão dos dados pro Python
+			
 			printf("A\n");
+			
+			// congela o RTOS até que todos os dados sejam transmitidos
 			taskENTER_CRITICAL();
 			for(uint32_t i =0; i< SOUND_LEN; i++) {
 				printf("%d\n", *(g_sdram + i));
@@ -250,19 +265,20 @@ void task_adc(void){
 			vTaskDelay(500 / portTICK_PERIOD_MS);
 			but_flag = 0;
 			command_flag = 1;
+			
+			// habilita novamente o AFEC
 			afec_enable_interrupt(AFEC_POT, AFEC_POT_CHANNEL);
 		}
 	}
 }
 
 void task_bluetooth(void) {
-	printf("Task Bluetooth started \n");
-	printf("Inicializando HC05 \n");
 	config_usart0();
 
-	// Task não deve retornar.
 	while(1) {
 		if(command_flag == 1) {
+			// recebe a resposta do Python
+			
 			char rx_buffer[8];
 			usart_get_string(USART1, rx_buffer, 8, 100);
 			if (rx_buffer[0] == '0') {
@@ -281,7 +297,7 @@ void task_bluetooth(void) {
 }
 
 /************************************************************************/
-/* funcoes                                                              */
+/* inits                                                                */
 /************************************************************************/
 
 static void configure_console(void) {
@@ -321,9 +337,7 @@ static void init(void) {
 	afec_channel_enable(AFEC_POT, AFEC_POT_CHANNEL);
 	TC_init(TC0, ID_TC0, 0, TS);
 	
-	/*pmc_enable_periph_clk(GATE_ID);
-	pio_configure(GATE, PIO_INPUT, GATE_IDX_MASK, PIO_DEFAULT);*/
-	
+	/* Inicializa o button/gate */
 	NVIC_EnableIRQ(BUT_PIO_ID);
 	NVIC_SetPriority(BUT_PIO_ID, 4);
 
@@ -333,6 +347,7 @@ static void init(void) {
 	pio_enable_interrupt(BUT_PIO, BUT_PIO_PIN_MASK);
 	pio_handler_set(BUT_PIO, BUT_PIO_ID, BUT_PIO_PIN_MASK, ACTIVATE_IN , but_callback);
 	
+	/* Inicializa o LED */
 	pmc_enable_periph_clk(LED_ID);
 	pio_configure(LED, PIO_OUTPUT_0, LED_IDX_MASK, PIO_DEFAULT);
 	pio_set(LED, LED_IDX_MASK);
@@ -367,9 +382,7 @@ int main(void) {
 	/* Start the scheduler. */
 	vTaskStartScheduler();
 	
-	/* RTOS não deve chegar aqui !! */
 	while(1){}
 
-	/* Will only get here if there was insufficient memory to create the idle task. */
 	return 0;
 }
